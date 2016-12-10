@@ -53,7 +53,7 @@ public class Page {
      * @param offset the offset them the beginning of the page.
      * @param src the buffer with data to be written.
      */
-    public void write(int offset, ByteBuffer src) {
+    public synchronized void write(int offset, ByteBuffer src) {
         isDirty = true;
         data.clear().position(offset);
         data.put(src);
@@ -66,7 +66,7 @@ public class Page {
      * @param offset the offset from beginning of the page.
      * @param dest the buffer where to read the data.
      */
-    public void read(int offset, ByteBuffer dest) {
+    public synchronized void read(int offset, ByteBuffer dest) {
         data.clear().position(offset).limit(Math.min(pageDataSize, offset + dest.remaining()));
         dest.put(data);
     }
@@ -83,7 +83,7 @@ public class Page {
      * Load page with data from the disk;
      * @throws IOException If some other I/O error occurs
      */
-    public void load() throws IOException {
+    public synchronized void load() throws IOException {
         data.clear();
         channel.read(data, offset);
         pageDataSize = data.position();
@@ -93,7 +93,7 @@ public class Page {
      * Flush data to the disk if needed.
      * @throws IOException If some other I/O error occurs
      */
-    public void flush() throws IOException {
+    public synchronized void flush() throws IOException {
         if (isDirty) {
             data.clear();
             data.limit(pageDataSize);
