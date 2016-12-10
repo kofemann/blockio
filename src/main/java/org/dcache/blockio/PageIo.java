@@ -116,8 +116,11 @@ public class PageIo {
         return n;
     }
 
-    public void flushAll() {
+    public void flushAll() throws IOException {
         cache.invalidateAll();
+        if (ioError != null) {
+            throw ioError;
+        }
     }
 
     public static void main(String args[]) throws IOException {
