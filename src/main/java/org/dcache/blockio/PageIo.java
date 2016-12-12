@@ -25,20 +25,20 @@ public class PageIo {
 
     /**
      * Create new PageIo backed by given {@link FileChannel}.
-     * @param size the total number of cached pages.
+     * @param count the total number of cached pages.
      * @param pageSize single page size
      * @param channel {@link FileChannel} used to store the data.
      */
-    public PageIo(long size, int pageSize, FileChannel channel) {
+    public PageIo(int count, int pageSize, FileChannel channel) {
 
-        checkArgument(size > 0, "Cache size must be at lease one (1).");
+        checkArgument(count > 0, "Cache size must be at lease one (1).");
         checkArgument(Long.bitCount(pageSize) == 1, "Page size must be power of two (2)");
 
         this.pageSize = pageSize;
         this.channel = channel;
 
         cache = CacheBuilder.newBuilder()
-                .maximumSize(size / pageSize)
+                .maximumSize(count)
                 .removalListener((RemovalNotification<Long, Page> rn) -> {
                     try {
                         Page p = rn.getValue();
