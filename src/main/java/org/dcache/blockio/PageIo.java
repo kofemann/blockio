@@ -12,6 +12,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.StandardOpenOption;
 import java.util.concurrent.ExecutionException;
 
+import static com.google.common.base.Preconditions.checkArgument;
+
 public class PageIo {
 
     private final Cache<Long, Page> cache;
@@ -21,11 +23,16 @@ public class PageIo {
 
     private IOException ioError;
 
+    /**
+     * Create new PageIo backed by given {@link FileChannel}.
+     * @param size the total number of cached pages.
+     * @param pageSize single page size
+     * @param channel {@link FileChannel} used to store the data.
+     */
     public PageIo(long size, int pageSize, FileChannel channel) {
 
-        if (Long.bitCount(pageSize) > 1) {
-            throw new IllegalArgumentException("Page size must be power of 2");
-        }
+        checkArgument(size > 0, "Cache size must be at lease one (1).");
+        checkArgument(Long.bitCount(pageSize) == 1, "Page size must be power of two (2)");
 
         this.pageSize = pageSize;
         this.channel = channel;
