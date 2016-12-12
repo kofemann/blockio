@@ -58,9 +58,7 @@ public class PageIo {
                 pp.load();
                 return pp;
             });
-            /*
-             * getting Page from cache may trigger page flush and IO error.
-             */
+             // getting Page from cache may trigger page load/flush and IO error.
             if (ioError != null) {
                 throw ioError;
             }
