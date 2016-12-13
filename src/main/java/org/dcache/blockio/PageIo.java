@@ -9,8 +9,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.locks.StampedLock;
+import java.util.function.Function;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static java.util.Objects.requireNonNull;
 
 public class PageIo {
 
@@ -25,11 +27,6 @@ public class PageIo {
     private final int pageSize;
 
     /**
-     * {@link FileChannel} used to store/retreive data.
-     */
-    private final FileChannel channel;
-
-    /**
      * Lock to protect page eviction.
      */
     private final StampedLock lock;
@@ -40,19 +37,25 @@ public class PageIo {
     private final int count;
 
     /**
+     * Page supplier. Creates a new pages for a given pageId.
+     */
+    private final Function<Long, Page> pageSupplier;
+
+    /**
      * Create new PageIo backed by given {@link FileChannel}.
      *
      * @param count the total number of cached pages.
      * @param pageSize single page size
-     * @param channel {@link FileChannel} used to store the data.
+     * @param supplier suppier to produce/allocate pages.
      */
-    public PageIo(int count, int pageSize, FileChannel channel) {
+    public PageIo(int count, int pageSize, Function<Long, Page> supplier) {
 
+        requireNonNull(supplier, "Page supplier can't nbe null");
         checkArgument(count > 0, "Cache size must be at lease one (1).");
         checkArgument(Long.bitCount(pageSize) == 1, "Page size must be power of two (2)");
 
         this.pageSize = pageSize;
-        this.channel = channel;
+        this.pageSupplier = supplier;
         this.count = count;
 
         pages = new HashMap<>();
@@ -118,7 +121,7 @@ public class PageIo {
                     }
                 }
 
-                p = new Page(ByteBuffer.allocate(pageSize), pageId * pageSize, channel);
+                p = pageSupplier.apply(pageId);
                 pages.put(pageId, p);
                 p.load();
             }
@@ -131,21 +134,20 @@ public class PageIo {
 
     public void write(long offset, ByteBuffer data) throws IOException {
 
-        long o = offset;
+        long pos = offset;
+
         while (data.hasRemaining()) {
 
             final long pageId = offset / pageSize;
+            final int offsetInPage = (int) (pos % pageSize);
 
             final Page p = getPage(pageId);
             try {
-                final long pageOffset = p.getPageOffset();
-                final int offsetInPage = (int) (o - pageOffset);
-
                 ByteBuffer b = data.slice();
                 int ioSize = Math.min(b.remaining(), pageSize - offsetInPage);
                 b.limit(ioSize);
                 p.write(offsetInPage, b);
-                o += b.position();
+                pos += b.position();
                 data.position(data.position() + b.position());
             } finally {
                 p.decRefCount();
@@ -155,14 +157,13 @@ public class PageIo {
 
     public int read(long offset, ByteBuffer data) throws IOException {
         int n = 0;
-        long o = offset;
+        long pos = offset;
         while (data.hasRemaining()) {
             final long pageId = offset / pageSize;
+            final int offsetInPage = (int)(pos % pageSize);
 
             final Page p = getPage(pageId);
             try {
-                final long pageOffset = p.getPageOffset();
-                final int offsetInPage = (int) (o - pageOffset);
 
                 ByteBuffer b = data.slice();
                 int ioSize = Math.min(b.remaining(), pageSize - offsetInPage);
@@ -171,8 +172,8 @@ public class PageIo {
                 if (b.position() == 0) {
                     break;
                 }
-                o += b.position();
                 n += b.position();
+                pos += b.position();
                 data.position(data.position() + b.position());
             } finally {
                 p.decRefCount();
@@ -213,8 +214,10 @@ public class PageIo {
                 StandardOpenOption.WRITE,
                 StandardOpenOption.READ);
 
-        PageIo inPageCache = new PageIo(8192, 64 * 1024, in);
-        PageIo outPageCache = new PageIo(64, 8192, out);
+        int inPageSize = 64*1024;
+        int outPageSize = 8*1024;
+        PageIo inPageCache = new PageIo(8192, inPageSize, l -> new Page(ByteBuffer.allocate(inPageSize), new PageFileChannel(in, inPageSize*l)));
+        PageIo outPageCache = new PageIo(64, outPageSize, l -> new Page(ByteBuffer.allocate(outPageSize), new PageFileChannel(out, outPageSize*l)));
 
         ByteBuffer b = ByteBuffer.allocate(4096);
 

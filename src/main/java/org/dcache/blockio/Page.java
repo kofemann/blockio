@@ -2,7 +2,7 @@ package org.dcache.blockio;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
+import java.nio.channels.ByteChannel;
 
 public class Page {
 
@@ -17,19 +17,14 @@ public class Page {
     private final ByteBuffer data;
 
     /**
-     * Offset in the file where this page starts.
-     */
-    private final long offset;
-
-    /**
      * number of used bytes in the page.
      */
     private int pageDataSize;
 
     /**
-     * FileChannle which backs this page.
+     * ByteChannel which backs this page.
      */
-    private final FileChannel channel;
+    private final ByteChannel channel;
 
     /**
      * Number of active users of the page
@@ -41,10 +36,9 @@ public class Page {
      */
     private long lastAccessTime;
 
-    Page(ByteBuffer data, long offset, FileChannel channel) {
+    Page(ByteBuffer data, ByteChannel channel) {
         this.data = data;
         this.channel = channel;
-        this.offset = offset;
         this.pageDataSize = 0;
         this.lastAccessTime = System.currentTimeMillis();
     }
@@ -80,14 +74,6 @@ public class Page {
     public synchronized void read(int offset, ByteBuffer dest) {
         data.clear().position(offset).limit(Math.min(pageDataSize, offset + dest.remaining()));
         dest.put(data);
-    }
-
-    /**
-     * File back-end file offset which matches page beginning.
-     * @return offset in the file where pages starts.
-     */
-    public long getPageOffset() {
-        return offset;
     }
 
     /**
@@ -129,7 +115,7 @@ public class Page {
      */
     public synchronized void load() throws IOException {
         data.clear();
-        channel.read(data, offset);
+        channel.read(data);
         pageDataSize = data.position();
     }
 
@@ -141,7 +127,7 @@ public class Page {
         if (isDirty) {
             data.clear();
             data.limit(pageDataSize);
-            channel.write(data, offset);
+            channel.write(data);
             isDirty = false;
         }
     }
