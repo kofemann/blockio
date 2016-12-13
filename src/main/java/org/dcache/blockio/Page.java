@@ -31,11 +31,22 @@ public class Page {
      */
     private final FileChannel channel;
 
+    /**
+     * Number of active users of the page
+     */
+    private int refCounf;
+
+    /**
+     * Page's last access time;
+     */
+    private long lastAccessTime;
+
     Page(ByteBuffer data, long offset, FileChannel channel) {
         this.data = data;
         this.channel = channel;
         this.offset = offset;
         this.pageDataSize = 0;
+        this.lastAccessTime = System.currentTimeMillis();
     }
 
     /**
@@ -77,6 +88,39 @@ public class Page {
      */
     public long getPageOffset() {
         return offset;
+    }
+
+    /**
+     * Increase number of reference to this page by one.
+     */
+    public synchronized void incRefCount() {
+        lastAccessTime = System.currentTimeMillis();
+        refCounf++;
+        notifyAll();
+    }
+
+    /**
+     * Decrease number of reference to this page by one.
+     */
+    public synchronized void decRefCount() {
+        refCounf--;
+        notifyAll();
+    }
+
+    /**
+     * Get number of references to this page.
+     * @return number of references to the page.
+     */
+    public synchronized int getRefCount() {
+        return refCounf;
+    }
+
+    /**
+     * Returns last access time to this page in milliseconds.
+     * @return page's last access time in milliseconds.
+     */
+    public synchronized long getLastAccessTime() {
+        return lastAccessTime;
     }
 
     /**

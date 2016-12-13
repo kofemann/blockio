@@ -14,12 +14,20 @@ import static com.google.common.base.Preconditions.checkArgument;
 
 public class PageIo {
 
-    private final Map<Long, Page> cache;
+    /**
+     * {@link Map} to keep mapping between page number and page.
+     */
+    private final Map<Long, Page> pages;
 
+    /**
+     * Page size in bytes. Must be power of two.
+     */
     private final int pageSize;
-    private final FileChannel channel;
 
-    private IOException ioError;
+    /**
+     * {@link FileChannel} used to store/retreive data.
+     */
+    private final FileChannel channel;
 
     /**
      * Lock to protect page eviction.
@@ -47,7 +55,7 @@ public class PageIo {
         this.channel = channel;
         this.count = count;
 
-        cache = new HashMap<>();
+        pages = new HashMap<>();
         lock = new StampedLock();
     }
 
@@ -56,8 +64,8 @@ public class PageIo {
         Page p = null;
         long sl = lock.readLock();
         try {
-            while(true) {
-                p = cache.get(pageId);
+            while (true) {
+                p = pages.get(pageId);
                 if (p != null) {
                     break;
                 }
@@ -69,33 +77,52 @@ public class PageIo {
                     lock.unlockRead(sl);
                     sl = lock.writeLock();
 
-                    // retry the loop - either entry will be in the cache, inserted
-                    // by an other threas, or we get have exclusive lock to insert it.
+                    /*
+                     * as we have released lock an other thread for the same pageId
+                     * might have won the race and insered in to the pages map.
+                     *
+                     * We have exclusive lock and cat check that by re-trying the
+                     * request.
+                     */
                     continue;
                 }
 
                 // lucky thread with write access
                 sl = wl;
 
-                if (cache.size() > count - 1) {
-                    // we need to free a page
-                    // FIXME: we simply kill the first key without wating for release
-                    Optional<Long> oid = cache.keySet()
+                if (pages.size() > count - 1) {
+                    // Take the LRU page to remove
+                    Optional<Map.Entry<Long, Page>> oid = pages.entrySet()
                             .stream()
-                            .findAny();
+                            .max((e1, e2) -> Long.compare(e2.getValue().getLastAccessTime(), e1.getValue().getLastAccessTime()));
 
                     if (oid.isPresent()) {
-                        Page evicted = cache.remove(oid.get());
+                        Page evicted = pages.remove(oid.get().getKey());
 
-                        // FIXME: wait for ref-count == 0
+                        boolean interrupted = false;
+                        synchronized (evicted) {
+                            while (evicted.getRefCount() > 0) {
+                                try {
+                                    evicted.wait();
+                                } catch (InterruptedException e) {
+                                    interrupted = true;
+                                }
+                            }
+                        }
+
+                        if (interrupted) {
+                            Thread.currentThread().interrupt();
+                        }
+
                         evicted.flush();
                     }
                 }
 
                 p = new Page(ByteBuffer.allocate(pageSize), pageId * pageSize, channel);
-                cache.put(pageId, p);
+                pages.put(pageId, p);
                 p.load();
             }
+            p.incRefCount();
             return p;
         } finally {
             lock.unlock(sl);
@@ -110,15 +137,19 @@ public class PageIo {
             final long pageId = offset / pageSize;
 
             final Page p = getPage(pageId);
-            final long pageOffset = p.getPageOffset();
-            final int offsetInPage = (int) (o - pageOffset);
+            try {
+                final long pageOffset = p.getPageOffset();
+                final int offsetInPage = (int) (o - pageOffset);
 
-            ByteBuffer b = data.slice();
-            int ioSize = Math.min(b.remaining(), pageSize - offsetInPage);
-            b.limit(ioSize);
-            p.write(offsetInPage, b);
-            o += b.position();
-            data.position(data.position() + b.position());
+                ByteBuffer b = data.slice();
+                int ioSize = Math.min(b.remaining(), pageSize - offsetInPage);
+                b.limit(ioSize);
+                p.write(offsetInPage, b);
+                o += b.position();
+                data.position(data.position() + b.position());
+            } finally {
+                p.decRefCount();
+            }
         }
     }
 
@@ -129,37 +160,45 @@ public class PageIo {
             final long pageId = offset / pageSize;
 
             final Page p = getPage(pageId);
-            final long pageOffset = p.getPageOffset();
-            final int offsetInPage = (int) (o - pageOffset);
+            try {
+                final long pageOffset = p.getPageOffset();
+                final int offsetInPage = (int) (o - pageOffset);
 
-            ByteBuffer b = data.slice();
-            int ioSize = Math.min(b.remaining(), pageSize - offsetInPage);
-            b.limit(ioSize);
-            p.read(offsetInPage, b);
-            if (b.position() == 0) {
-                break;
+                ByteBuffer b = data.slice();
+                int ioSize = Math.min(b.remaining(), pageSize - offsetInPage);
+                b.limit(ioSize);
+                p.read(offsetInPage, b);
+                if (b.position() == 0) {
+                    break;
+                }
+                o += b.position();
+                n += b.position();
+                data.position(data.position() + b.position());
+            } finally {
+                p.decRefCount();
             }
-            o += b.position();
-            n += b.position();
-            data.position(data.position() + b.position());
         }
         return n;
     }
 
     public void flushAll() throws IOException {
+
+        IOException ioError[] = new IOException[1];
+
         long stamp = lock.writeLock();
         try {
-            cache.forEach((k, v) -> {
+            pages.forEach((k, v) -> {
                 try {
                     v.flush();
                 } catch (IOException e) {
-                    ioError = e;
+                    ioError[0] = e;
                 }
             });
 
-            if (ioError != null) {
-                throw ioError;
+            if (ioError[0] != null) {
+                throw ioError[0];
             }
+
         } finally {
             lock.unlock(stamp);
         }
