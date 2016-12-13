@@ -48,7 +48,7 @@ public class Page {
      * back-end {@code channel}.
      * @return true if data is not flushed to the channel.
      */
-    public boolean isDirty() {
+    public synchronized boolean isDirty() {
         return isDirty;
     }
 
@@ -62,7 +62,7 @@ public class Page {
         isDirty = true;
         data.clear().position(offset);
         data.put(src);
-        pageDataSize = data.position();
+        pageDataSize = Math.max(pageDataSize, data.position());
     }
 
     /**
