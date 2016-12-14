@@ -93,4 +93,30 @@ public class PageTest {
         assertEquals("Extected read size must be last write offset + nbytes",
                 5 + Long.BYTES , b.position());
     }
+
+    @Test
+    public void shouldKeepPageSizeAfterWrite() throws IOException {
+
+        Page p = new Page(ByteBuffer.allocate(64), new ByteBufferChannel(8192));
+        p.load();
+
+        ByteBuffer b = ByteBuffer.allocate(64);
+        b.putLong(5);
+        b.flip();
+
+        p.write(Long.BYTES, b);
+
+        b.clear();
+        b.putLong(1);
+        b.flip();
+        p.write(0, b);
+
+        b.clear();
+        p.read(0, b);
+        b.flip();
+        assertEquals("Invalid number of bytes", 2*Long.BYTES, b.remaining());
+        assertEquals("Invalid data ", 1, b.getLong());
+        assertEquals("Invalid data ", 5, b.getLong());
+    }
+
 }
