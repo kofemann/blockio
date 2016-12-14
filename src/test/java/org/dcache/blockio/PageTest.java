@@ -1,5 +1,6 @@
 package org.dcache.blockio;
 
+import com.sun.org.apache.bcel.internal.generic.LoadClass;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ByteChannel;
@@ -75,5 +76,21 @@ public class PageTest {
         assertTrue("Updated must make page dirty", p.isDirty());
     }
 
-    //@Test
+    @Test
+    public void shouldSetPageSizeToOffsetLenOnWrite() throws IOException {
+
+        Page p = new Page(ByteBuffer.allocate(64), new ByteBufferChannel(8192));
+        p.load();
+
+        ByteBuffer b = ByteBuffer.allocate(64);
+        b.putLong(5);
+
+        b.flip();
+        p.write(5, b);
+
+        b.clear();
+        p.read(0, b);
+        assertEquals("Extected read size must be last write offset + nbytes",
+                5 + Long.BYTES , b.position());
+    }
 }
