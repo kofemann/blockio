@@ -1,6 +1,5 @@
 package org.dcache.blockio;
 
-import com.sun.org.apache.bcel.internal.generic.LoadClass;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ByteChannel;
@@ -12,7 +11,7 @@ import static org.junit.Assert.*;
  */
 public class PageTest {
 
-    private final class ByteBufferChannel implements ByteChannel {
+    private static class ByteBufferChannel implements ByteChannel {
 
         private final ByteBuffer data;
 
