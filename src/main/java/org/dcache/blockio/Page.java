@@ -44,8 +44,9 @@ public class Page {
     }
 
     /**
-     * Returns if there is data in the page which is not flushed to the
-     * back-end {@code channel}.
+     * Returns if there is data in the page which is not flushed to the back-end
+     * {@code channel}.
+     *
      * @return true if data is not flushed to the channel.
      */
     public synchronized boolean isDirty() {
@@ -59,10 +60,12 @@ public class Page {
      * @param src the buffer with data to be written.
      */
     public synchronized void write(int offset, ByteBuffer src) {
-        isDirty = true;
-        data.clear().position(offset);
-        data.put(src);
-        pageDataSize = Math.max(pageDataSize, data.position());
+        if (src.hasRemaining()) {
+            isDirty = true;
+            data.clear().position(offset);
+            data.put(src);
+            pageDataSize = Math.max(pageDataSize, data.position());
+        }
     }
 
     /**
@@ -95,6 +98,7 @@ public class Page {
 
     /**
      * Get number of references to this page.
+     *
      * @return number of references to the page.
      */
     public synchronized int getRefCount() {
@@ -103,6 +107,7 @@ public class Page {
 
     /**
      * Returns last access time to this page in milliseconds.
+     *
      * @return page's last access time in milliseconds.
      */
     public synchronized long getLastAccessTime() {
@@ -111,6 +116,7 @@ public class Page {
 
     /**
      * Load page with data from the disk;
+     *
      * @throws IOException If some other I/O error occurs
      */
     public synchronized void load() throws IOException {
@@ -121,6 +127,7 @@ public class Page {
 
     /**
      * Flush data to the disk if needed.
+     *
      * @throws IOException If some other I/O error occurs
      */
     public synchronized void flush() throws IOException {

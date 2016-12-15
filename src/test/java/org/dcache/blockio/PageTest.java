@@ -76,6 +76,21 @@ public class PageTest {
     }
 
     @Test
+    public void shouldRemoveDirtyFlagAfterFlush() throws IOException {
+
+        Page p = new Page(ByteBuffer.allocate(64), new ByteBufferChannel(8192));
+        p.load();
+
+        ByteBuffer b = ByteBuffer.allocate(64);
+        b.putLong(5);
+        b.flip();
+
+        p.write(0, b);
+        p.flush();
+        assertFalse("Page dirty after flush", p.isDirty());
+    }
+
+    @Test
     public void shouldSetPageSizeToOffsetLenOnWrite() throws IOException {
 
         Page p = new Page(ByteBuffer.allocate(64), new ByteBufferChannel(8192));
@@ -90,7 +105,7 @@ public class PageTest {
         b.clear();
         p.read(0, b);
         assertEquals("Extected read size must be last write offset + nbytes",
-                5 + Long.BYTES , b.position());
+                5 + Long.BYTES, b.position());
     }
 
     @Test
@@ -113,9 +128,27 @@ public class PageTest {
         b.clear();
         p.read(0, b);
         b.flip();
-        assertEquals("Invalid number of bytes", 2*Long.BYTES, b.remaining());
-        assertEquals("Invalid data ", 1, b.getLong());
-        assertEquals("Invalid data ", 5, b.getLong());
+        assertEquals("Invalid number of bytes", 2 * Long.BYTES, b.remaining());
+        assertEquals("Invalid data", 1, b.getLong());
+        assertEquals("Invalid data", 5, b.getLong());
+    }
+
+    @Test
+    public void shouldNotMarkPageDirtyOnZeroBytesWrite() throws IOException {
+
+        Page p = new Page(ByteBuffer.allocate(64), new ByteBufferChannel(8192));
+        p.load();
+
+        ByteBuffer b = ByteBuffer.allocate(64);
+        b.putLong(5);
+        b.flip();
+
+        p.write(0, b);
+        p.flush();
+
+        b.clear().flip();
+        p.write(0, b);
+        assertFalse("Page dirty after flush", p.isDirty());
     }
 
 }
