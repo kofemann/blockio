@@ -46,7 +46,7 @@ public class PageIo {
      *
      * @param count the total number of cached pages.
      * @param pageSize single page size
-     * @param supplier suppier to produce/allocate pages.
+     * @param supplier supplier to produce/allocate pages.
      */
     public PageIo(int count, int pageSize, Function<Long, Page> supplier) {
 
