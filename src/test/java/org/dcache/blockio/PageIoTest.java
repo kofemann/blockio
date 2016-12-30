@@ -20,12 +20,13 @@ public class PageIoTest {
     @Before
     public void setUp() {
         backend = ByteBuffer.allocate(64 * 4096);
-        pageIo = new PageIo(64, 128,
+        int pageSize = 128;
+        pageIo = new PageIo(64, pageSize,
                 id -> {
                     ByteBuffer b = backend.duplicate();
-                    b.position(id.intValue() * 128);
-                    b.limit(id.intValue() * 128 + 128);
-                    return new Page(ByteBuffer.allocate(128), new ByteBufferChannel(b.slice()));
+                    b.position(id.intValue() * pageSize);
+                    b.limit(id.intValue() * pageSize + pageSize);
+                    return new Page(ByteBuffer.allocate(pageSize), new ByteBufferChannel(b.slice()));
                 });
 
     }
@@ -35,7 +36,7 @@ public class PageIoTest {
 
         byte[] data = new byte[8192];
 
-        new Random().nextBytes(data);
+        new Random(0).nextBytes(data);
 
         for (int i = 0; i < data.length / 64; i++) {
             pageIo.write(i * 64, ByteBuffer.wrap(data, i * 64, 64));
@@ -49,7 +50,7 @@ public class PageIoTest {
 
         byte[] data = new byte[8192];
 
-        new Random().nextBytes(data);
+        new Random(0).nextBytes(data);
 
         for (int i = 0; i < data.length / 64; i++) {
             pageIo.write(i * 64, ByteBuffer.wrap(data, i * 64, 64));
