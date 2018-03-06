@@ -50,7 +50,7 @@ public class PageIo {
      */
     public PageIo(int count, int pageSize, Function<Long, Page> supplier) {
 
-        requireNonNull(supplier, "Page supplier can't nbe null");
+        requireNonNull(supplier, "Page supplier can't be null");
         checkArgument(count > 0, "Cache size must be at lease one (1).");
         checkArgument(Long.bitCount(pageSize) == 1, "Page size must be power of two (2)");
 
