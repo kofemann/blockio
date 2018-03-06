@@ -84,7 +84,7 @@ public class PageIo {
                      * as we have released lock an other thread for the same pageId
                      * might have won the race and insered in to the pages map.
                      *
-                     * We have exclusive lock and cat check that by re-trying the
+                     * We have exclusive lock and can check that by re-trying the
                      * request.
                      */
                     continue;
