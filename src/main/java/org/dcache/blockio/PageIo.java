@@ -1,10 +1,8 @@
 package org.dcache.blockio;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.StandardOpenOption;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -203,38 +201,5 @@ public class PageIo {
         } finally {
             lock.unlock(stamp);
         }
-    }
-
-    public static void main(String args[]) throws IOException {
-
-        FileChannel in = FileChannel.open(new File("/home/tigran/Downloads/Lightroom_6_LS11.exe").toPath());
-        FileChannel out = FileChannel.open(new File("/tmp/data").toPath(),
-                StandardOpenOption.CREATE,
-                StandardOpenOption.TRUNCATE_EXISTING,
-                StandardOpenOption.WRITE,
-                StandardOpenOption.READ);
-
-        int inPageSize = 64*1024;
-        int outPageSize = 8*1024;
-        PageIo inPageCache = new PageIo(8192, inPageSize, l -> new Page(ByteBuffer.allocate(inPageSize), new PageFileChannel(in, inPageSize*l)));
-        PageIo outPageCache = new PageIo(64, outPageSize, l -> new Page(ByteBuffer.allocate(outPageSize), new PageFileChannel(out, outPageSize*l)));
-
-        ByteBuffer b = ByteBuffer.allocate(4096);
-
-        long offset = 0;
-        while (true) {
-            b.clear();
-            int n = inPageCache.read(offset, b);
-            if (n == 0) {
-                break;
-            }
-            b.flip();
-            outPageCache.write(offset, b);
-            offset += n;
-            //  System.out.print(new String(b.array(), 0, b.remaining(), StandardCharsets.UTF_8));
-        }
-        System.out.println();
-        inPageCache.flushAll();
-        outPageCache.flushAll();
     }
 }
