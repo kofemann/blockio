@@ -14,13 +14,13 @@ import org.junit.Before;
  */
 public class PageIoTest {
 
+    int pageSize = 128;
     ByteBuffer backend;
     PageIo pageIo;
 
     @Before
     public void setUp() {
         backend = ByteBuffer.allocate(64 * 4096);
-        int pageSize = 128;
         pageIo = new PageIo(64, pageSize,
                 id -> {
                     ByteBuffer b = backend.duplicate();
@@ -43,6 +43,42 @@ public class PageIoTest {
         }
         pageIo.flushAll();
         assertArrayEquals("invalid data", data, Arrays.copyOf(backend.array(), data.length));
+    }
+
+    @Test
+    public void shouldAllocateOnePageOnSmallWrite() throws IOException {
+
+        byte[] data = new byte[5];
+
+        pageIo.write(0, ByteBuffer.wrap(data));
+        assertEquals(1, pageIo.getPageCount());
+    }
+
+    @Test
+    public void shouldAllocateOnePageOnSmallWriteDifferentOffset() throws IOException {
+
+        byte[] data = new byte[5];
+
+        pageIo.write(pageSize + 16, ByteBuffer.wrap(data));
+        assertEquals(1, pageIo.getPageCount());
+    }
+
+    @Test
+    public void shouldAllocateTwoPagesForNotAlignedWrite() throws IOException {
+
+        byte[] data = new byte[5];
+
+        pageIo.write(pageSize - 1, ByteBuffer.wrap(data));
+        assertEquals(2, pageIo.getPageCount());
+    }
+
+    @Test
+    public void shouldAllocateMultiplePagesOnBigWrite() throws IOException {
+
+        byte[] data = new byte[pageSize * 4];
+
+        pageIo.write(0, ByteBuffer.wrap(data));
+        assertEquals(4, pageIo.getPageCount());
     }
 
     @Test

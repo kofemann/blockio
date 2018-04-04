@@ -136,7 +136,7 @@ public class PageIo {
 
         while (data.hasRemaining()) {
 
-            final long pageId = offset / pageSize;
+            final long pageId = pos / pageSize;
             final int offsetInPage = (int) (pos % pageSize);
 
             final Page p = getPage(pageId);
@@ -157,7 +157,7 @@ public class PageIo {
         int n = 0;
         long pos = offset;
         while (data.hasRemaining()) {
-            final long pageId = offset / pageSize;
+            final long pageId = pos / pageSize;
             final int offsetInPage = (int)(pos % pageSize);
 
             final Page p = getPage(pageId);
@@ -202,4 +202,37 @@ public class PageIo {
             lock.unlock(stamp);
         }
     }
+
+    /**
+     * Returns page size in bytes.
+     *
+     * @return page size in bytes.
+     */
+    public int getPageSize() {
+        return pageSize;
+    }
+
+    /**
+     * Returns maximal number of pages in the page cache.
+     *
+     * @return maximal number of pages in the page cache.
+     */
+    public int getMaxPageCount() {
+        return count;
+    }
+
+    /**
+     * Returns number of pages in the page cache.
+     *
+     * @return number of pages in the page cache.
+     */
+    public int getPageCount() {
+        long sl = lock.readLock();
+        try {
+            return pages.size();
+        } finally {
+            lock.unlock(sl);
+        }
+    }
+
 }
