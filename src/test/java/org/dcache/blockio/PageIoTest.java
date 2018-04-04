@@ -2,8 +2,11 @@ package org.dcache.blockio;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Random;
+
 import org.junit.Test;
 import static org.junit.Assert.*;
 import org.junit.Before;
@@ -17,16 +20,24 @@ public class PageIoTest {
     int pageSize = 128;
     ByteBuffer backend;
     PageIo pageIo;
+    List<Long> flushedPages;
 
     @Before
     public void setUp() {
+        flushedPages = new ArrayList<>();
         backend = ByteBuffer.allocate(64 * 4096);
         pageIo = new PageIo(64, pageSize,
                 id -> {
                     ByteBuffer b = backend.duplicate();
                     b.position(id.intValue() * pageSize);
                     b.limit(id.intValue() * pageSize + pageSize);
-                    return new Page(ByteBuffer.allocate(pageSize), new ByteBufferChannel(b.slice()));
+                    return new Page(ByteBuffer.allocate(pageSize), new ByteBufferChannel(b.slice())) {
+                        @Override
+                        public synchronized void flush() throws IOException {
+                            super.flush();
+                            flushedPages.add(id);
+                        }
+                    };
                 });
 
     }
@@ -95,4 +106,15 @@ public class PageIoTest {
         assertArrayEquals("invalid data", data, Arrays.copyOf(backend.array(), data.length));
     }
 
+    @Test
+    public void shouldFlushIfMorePagesUsed() throws Exception {
+
+        byte[] data = new byte[pageSize];
+        int extraPages = 3;
+
+        for (int i = 0; i < pageIo.getMaxPageCount() + extraPages; i++) {
+            pageIo.write(i * data.length, ByteBuffer.wrap(data));
+        }
+        assertEquals(extraPages, flushedPages.size());
+    }
 }
