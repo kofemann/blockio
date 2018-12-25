@@ -13,6 +13,7 @@ class ByteBufferChannel implements ByteChannel {
 
     public ByteBufferChannel(int size) {
         this(ByteBuffer.allocate(size));
+        data.limit(data.position());
     }
 
     public ByteBufferChannel(ByteBuffer buf) {
@@ -21,12 +22,8 @@ class ByteBufferChannel implements ByteChannel {
 
     @Override
     public int read(ByteBuffer dst) throws IOException {
-        if (!data.hasRemaining()) {
-            return -1;
-        }
-        ByteBuffer b = data.duplicate();
-        b.flip();
-        b.limit(Math.min(b.position(), dst.remaining()));
+        ByteBuffer b = data.slice();
+        b.limit(Math.min(b.remaining(), dst.remaining()));
         dst.put(b);
         return b.position();
     }

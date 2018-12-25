@@ -57,6 +57,21 @@ public class PageIoTest {
     }
 
     @Test
+    public void shouldMatchRead() throws IOException {
+
+        byte[] data = new byte[8192];
+
+        new Random(0).nextBytes(backend.array());
+
+        for (int i = 0; i < data.length / 64; i++) {
+            ByteBuffer b = ByteBuffer.wrap(data, i * 64, 64);
+            pageIo.read(i * 64, b);
+        }
+
+        assertArrayEquals("invalid data", Arrays.copyOf(backend.array(), data.length), data);
+    }
+
+    @Test
     public void shouldAllocateOnePageOnSmallWrite() throws IOException {
 
         byte[] data = new byte[5];
