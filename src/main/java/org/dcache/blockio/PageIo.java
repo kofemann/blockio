@@ -3,10 +3,8 @@ package org.dcache.blockio;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.locks.StampedLock;
+import java.util.concurrent.locks.Lock;
 import java.util.function.Function;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -17,17 +15,13 @@ public class PageIo {
     /**
      * {@link Map} to keep mapping between page number and page.
      */
-    private final Map<Long, Page> pages;
+    private final PageCache pages;
 
     /**
      * Page size in bytes. Must be power of two.
      */
     private final int pageSize;
 
-    /**
-     * Lock to protect page eviction.
-     */
-    private final StampedLock lock;
 
     /**
      * Maximal number of cached pages.
@@ -35,99 +29,22 @@ public class PageIo {
     private final int count;
 
     /**
-     * Page supplier. Creates a new pages for a given pageId.
-     */
-    private final Function<Long, Page> pageSupplier;
-
-    /**
      * Create new PageIo backed by given {@link FileChannel}.
      *
-     * @param count the total number of cached pages.
+     * @param size the total number of cached pages.
      * @param pageSize single page size
      * @param supplier supplier to produce/allocate pages.
      */
-    public PageIo(int count, int pageSize, Function<Long, Page> supplier) {
+    public PageIo(int size, int pageSize, Function<Long, Page> supplier) {
 
         requireNonNull(supplier, "Page supplier can't be null");
-        checkArgument(count > 0, "Cache size must be at lease one (1).");
+        checkArgument(size > 0, "Cache size must be at lease one (1).");
         checkArgument(Long.bitCount(pageSize) == 1, "Page size must be power of two (2)");
 
         this.pageSize = pageSize;
-        this.pageSupplier = supplier;
-        this.count = count;
+        this.count = size;
 
-        pages = new HashMap<>();
-        lock = new StampedLock();
-    }
-
-    private Page getPage(long pageId) throws IOException {
-
-        Page p = null;
-        long sl = lock.readLock();
-        try {
-            while (true) {
-                p = pages.get(pageId);
-                if (p != null) {
-                    break;
-                }
-
-                // try to upgrade to a write lock
-                long wl = lock.tryConvertToWriteLock(sl);
-                if (wl == 0) {
-                    // failed to covert to write lock.
-                    lock.unlockRead(sl);
-                    sl = lock.writeLock();
-
-                    /*
-                     * as we have released lock an other thread for the same pageId
-                     * might have won the race and insered in to the pages map.
-                     *
-                     * We have exclusive lock and can check that by re-trying the
-                     * request.
-                     */
-                    continue;
-                }
-
-                // lucky thread with write access
-                sl = wl;
-
-                if (pages.size() > count - 1) {
-                    // Take the LRU page to remove
-                    Optional<Map.Entry<Long, Page>> oid = pages.entrySet()
-                            .stream()
-                            .max((e1, e2) -> Long.compare(e2.getValue().getLastAccessTime(), e1.getValue().getLastAccessTime()));
-
-                    if (oid.isPresent()) {
-                        Page evicted = pages.remove(oid.get().getKey());
-
-                        boolean interrupted = false;
-                        synchronized (evicted) {
-                            while (evicted.getRefCount() > 0) {
-                                try {
-                                    evicted.wait();
-                                } catch (InterruptedException e) {
-                                    interrupted = true;
-                                }
-                            }
-                        }
-
-                        if (interrupted) {
-                            Thread.currentThread().interrupt();
-                        }
-
-                        evicted.flush();
-                    }
-                }
-
-                p = pageSupplier.apply(pageId);
-                pages.put(pageId, p);
-                p.load();
-            }
-            p.incRefCount();
-            return p;
-        } finally {
-            lock.unlock(sl);
-        }
+        pages = new PageCache(size, supplier);
     }
 
     public void write(long offset, ByteBuffer data) throws IOException {
@@ -139,7 +56,9 @@ public class PageIo {
             final long pageId = pos / pageSize;
             final int offsetInPage = (int) (pos % pageSize);
 
-            final Page p = getPage(pageId);
+            final Page p = pages.get(pageId);
+            Lock l = p.getLock().writeLock();
+            l.lock();
             try {
                 ByteBuffer b = data.slice();
                 int ioSize = Math.min(b.remaining(), pageSize - offsetInPage);
@@ -148,7 +67,7 @@ public class PageIo {
                 pos += b.position();
                 data.position(data.position() + b.position());
             } finally {
-                p.decRefCount();
+                l.unlock();
             }
         }
     }
@@ -158,9 +77,11 @@ public class PageIo {
         long pos = offset;
         while (data.hasRemaining()) {
             final long pageId = pos / pageSize;
-            final int offsetInPage = (int)(pos % pageSize);
+            final int offsetInPage = (int) (pos % pageSize);
 
-            final Page p = getPage(pageId);
+            final Page p = pages.get(pageId);
+            Lock l = p.getLock().readLock();
+            l.lock();
             try {
 
                 ByteBuffer b = data.slice();
@@ -174,33 +95,14 @@ public class PageIo {
                 pos += b.position();
                 data.position(data.position() + b.position());
             } finally {
-                p.decRefCount();
+                l.unlock();
             }
         }
         return n;
     }
 
     public void flushAll() throws IOException {
-
-        IOException ioError[] = new IOException[1];
-
-        long stamp = lock.writeLock();
-        try {
-            pages.forEach((k, v) -> {
-                try {
-                    v.flush();
-                } catch (IOException e) {
-                    ioError[0] = e;
-                }
-            });
-
-            if (ioError[0] != null) {
-                throw ioError[0];
-            }
-
-        } finally {
-            lock.unlock(stamp);
-        }
+        pages.flushAll();
     }
 
     /**
@@ -226,13 +128,8 @@ public class PageIo {
      *
      * @return number of pages in the page cache.
      */
-    public int getPageCount() {
-        long sl = lock.readLock();
-        try {
-            return pages.size();
-        } finally {
-            lock.unlock(sl);
-        }
+    public long getPageCount() {
+        return pages.size();
     }
 
 }

@@ -3,6 +3,9 @@ package org.dcache.blockio;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ByteChannel;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import javax.annotation.concurrent.GuardedBy;
 
 public class Page {
 
@@ -27,20 +30,15 @@ public class Page {
     private final ByteChannel channel;
 
     /**
-     * Number of active users of the page
+     * Lock to protect access to the page.
      */
-    private int refCounf;
-
-    /**
-     * Page's last access time;
-     */
-    private long lastAccessTime;
+    private final ReadWriteLock rwLock;
 
     Page(ByteBuffer data, ByteChannel channel) {
         this.data = data;
         this.channel = channel;
         this.pageDataSize = 0;
-        this.lastAccessTime = System.currentTimeMillis();
+        this.rwLock = new ReentrantReadWriteLock();
     }
 
     /**
@@ -59,7 +57,8 @@ public class Page {
      * @param offset the offset them the beginning of the page.
      * @param src the buffer with data to be written.
      */
-    public synchronized void write(int offset, ByteBuffer src) {
+    @GuardedBy("rwLock")
+    public void write(int offset, ByteBuffer src) {
         if (src.hasRemaining()) {
             isDirty = true;
             data.clear().position(offset);
@@ -74,44 +73,14 @@ public class Page {
      * @param offset the offset from beginning of the page.
      * @param dest the buffer where to read the data.
      */
-    public synchronized void read(int offset, ByteBuffer dest) {
+    @GuardedBy("rwLock")
+    public void read(int offset, ByteBuffer dest) {
         data.clear().position(offset).limit(Math.min(pageDataSize, offset + dest.remaining()));
         dest.put(data);
     }
 
-    /**
-     * Increase number of reference to this page by one.
-     */
-    public synchronized void incRefCount() {
-        lastAccessTime = System.currentTimeMillis();
-        refCounf++;
-        notifyAll();
-    }
-
-    /**
-     * Decrease number of reference to this page by one.
-     */
-    public synchronized void decRefCount() {
-        refCounf--;
-        notifyAll();
-    }
-
-    /**
-     * Get number of references to this page.
-     *
-     * @return number of references to the page.
-     */
-    public synchronized int getRefCount() {
-        return refCounf;
-    }
-
-    /**
-     * Returns last access time to this page in milliseconds.
-     *
-     * @return page's last access time in milliseconds.
-     */
-    public synchronized long getLastAccessTime() {
-        return lastAccessTime;
+    public ReadWriteLock getLock() {
+        return rwLock;
     }
 
     /**
