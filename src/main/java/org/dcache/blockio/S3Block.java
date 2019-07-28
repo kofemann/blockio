@@ -1,12 +1,13 @@
 package org.dcache.blockio;
 
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.AmazonS3Exception;
-import com.amazonaws.services.s3.model.ObjectMetadata;
-import com.amazonaws.services.s3.model.PutObjectResult;
-import com.amazonaws.services.s3.model.S3Object;
-import java.io.ByteArrayInputStream;
+import com.fasterxml.jackson.databind.util.ByteBufferBackedInputStream;
+import com.fasterxml.jackson.databind.util.ByteBufferBackedOutputStream;
+import com.google.common.io.ByteStreams;
+import io.minio.ErrorCode;
+import io.minio.MinioClient;
+import io.minio.errors.ErrorResponseException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.ByteChannel;
 
@@ -17,12 +18,11 @@ public class S3Block implements ByteChannel {
 
     private final static String MIME_TYPE = "binary/octet-stream";
 
-    private final AmazonS3 s3;
+    private final MinioClient s3;
     private final String bucket;
     private final String objName;
 
-
-    public S3Block(AmazonS3 s3, String bucket, String objName) {
+    public S3Block(MinioClient s3, String bucket, String objName) {
         this.s3 = s3;
         this.bucket = bucket;
         this.objName = objName;
@@ -31,16 +31,22 @@ public class S3Block implements ByteChannel {
     @Override
     public int read(ByteBuffer dst) throws IOException {
 
-        int len = dst.remaining();
         try {
-            S3Object o = s3.getObject(bucket, objName);
-            len = (int) o.getObjectMetadata().getContentLength();
+            InputStream stream = s3.getObject(bucket, objName);
 
-            o.getObjectContent().read(dst.array(), 0, len);
-        } catch (AmazonS3Exception e) {
+            ByteBufferBackedOutputStream out = new ByteBufferBackedOutputStream(dst);
+            return (int) ByteStreams.copy(stream, out);
+        } catch (ErrorResponseException e) {
 
+            if (e.errorResponse().errorCode() == ErrorCode.NO_SUCH_OBJECT) {
+                return 0;
+            }
+            System.out.println(e.errorResponse().errorCode());
+            throw new IOException(e);
+
+        } catch (Exception e) {
+            throw new IOException(e);
         }
-        return len;
     }
 
     @Override
@@ -56,10 +62,13 @@ public class S3Block implements ByteChannel {
     @Override
     public int write(ByteBuffer src) throws IOException {
         int len = src.remaining();
-        ObjectMetadata om = new ObjectMetadata();
-        om.setContentLength(len);
-        om.setContentType(MIME_TYPE);
-        PutObjectResult r = s3.putObject(bucket, objName, new ByteArrayInputStream(src.array(), 0, src.remaining()), om);
+
+        try {
+            s3.putObject(bucket, objName, new ByteBufferBackedInputStream(src), (long)len, null, null, MIME_TYPE);
+        } catch (Exception e) {
+            throw new IOException(e);
+
+        }
         return len;
     }
 
