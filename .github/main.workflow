@@ -1,6 +1,6 @@
-workflow "New workflow" {
-  on = "push"
+workflow "Build on push" {
   resolves = ["GitHub Action for Maven"]
+  on = "push"
 }
 
 action "GitHub Action for Maven" {
